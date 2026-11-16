@@ -1,17 +1,21 @@
 {
   "name": "itami-rental-map",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint src",
     "preview": "vite preview",
-    "test": "node tests/parser.test.ts",
-    "test:e2e": "node tests/e2e.mjs"
+    "test": "node tests/parser.test.ts && node tests/sync.test.ts",
+    "test:e2e": "node tests/e2e.mjs",
+    "test:db": "bash supabase/tests/run.sh",
+    "build:e2e-cloud": "VITE_SUPABASE_URL=https://e2e-test.supabase.co VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_e2e vite build --outDir dist-e2e",
+    "test:e2e:cloud": "node tests/e2e-cloud.mjs"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.119.0",
     "idb-keyval": "^6.3.0",
     "leaflet": "^1.9.4",
     "react": "^19.3.1",

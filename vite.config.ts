@@ -5,4 +5,5 @@ import { defineConfig } from 'vite'
 export default defineConfig({
   base: './',
   plugins: [react()],
+  build: { chunkSizeWarningLimit: 800 }, // 個人利用のため1ファイルで十分（gzip 約190KB）
 })

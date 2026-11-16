@@ -4,6 +4,16 @@ import { downloadText, makeBackup, parseBackup } from '../lib/storage'
 import type { BusLayer } from '../lib/busData'
 import { parseGeoJson, hashColor } from '../lib/busData'
 import { normalizeUrl, uid } from '../lib/util'
+import type { SyncState } from '../lib/sync'
+import { syncLabel } from './SyncBadge'
+
+export interface AccountInfo {
+  email: string
+  state: SyncState | null
+  realtime: boolean
+  onSyncNow: () => void
+  onLogout: () => void
+}
 
 interface Props {
   properties: Property[]
@@ -12,6 +22,7 @@ interface Props {
   onAddLayer: (l: BusLayer) => void
   onRemoveLayer: (id: string) => void
   onClose: () => void
+  account: AccountInfo | null
 }
 
 /** インポート：同じID、または同じSUUMO URLの物件は更新日時が新しい方を残す */
@@ -34,7 +45,7 @@ export function mergeProperties(current: Property[], incoming: Property[]) {
   return { list: out, added, updated, skipped }
 }
 
-export default function DataModal({ properties, busLayers, onReplace, onAddLayer, onRemoveLayer, onClose }: Props) {
+export default function DataModal({ properties, busLayers, onReplace, onAddLayer, onRemoveLayer, onClose, account }: Props) {
   const [msg, setMsg] = useState('')
   const [err, setErr] = useState('')
   const [mode, setMode] = useState<'merge' | 'replace'>('merge')
@@ -55,7 +66,13 @@ export default function DataModal({ properties, busLayers, onReplace, onAddLayer
     try {
       const incoming = parseBackup(await file.text())
       if (mode === 'replace') {
-        if (!confirm(`現在の${properties.length}件をすべて削除し、ファイルの${incoming.length}件に置き換えます。よろしいですか？`)) return
+        if (
+          !confirm(
+            `現在の${properties.length}件をすべて削除し、ファイルの${incoming.length}件に置き換えます。よろしいですか？` +
+              (account ? '\n\n⚠ 共有モードのため、パートナーの端末からも削除・置き換えされます。' : ''),
+          )
+        )
+          return
         onReplace(incoming)
         setMsg(`${incoming.length}件を復元しました（置き換え）。`)
       } else {
@@ -107,9 +124,42 @@ export default function DataModal({ properties, busLayers, onReplace, onAddLayer
           {msg && <p className="ok">{msg}</p>}
           {err && <p className="alert">{err}</p>}
 
+          {account && (
+            <fieldset>
+              <legend>共有（2人で同期）</legend>
+              <p>
+                ログイン中：<b>{account.email}</b>
+              </p>
+              <p>
+                同期状態：<b>{syncLabel(account.state)}</b>
+                {account.state?.lastSyncedAt && (
+                  <small className="muted">（最終同期 {new Date(account.state.lastSyncedAt).toLocaleString('ja-JP')}）</small>
+                )}
+                <br />
+                <small className="muted">
+                  {account.realtime ? '● リアルタイム接続中：相手の変更がすぐ反映されます' : '○ リアルタイム未接続：画面を開き直したとき・2分ごとに反映されます'}
+                </small>
+              </p>
+              {account.state?.error && <p className="alert">{account.state.error}</p>}
+              <div className="loc-buttons">
+                <button className="btn" onClick={account.onSyncNow}>
+                  ⟳ 今すぐ同期
+                </button>
+                <button className="btn danger" onClick={account.onLogout}>
+                  ログアウト
+                </button>
+              </div>
+              <p className="hint">物件データはサーバー（Supabase）に保存され、2人の全端末で共有されます。取り込んだGeoJSONと絞り込み条件は端末ごとの設定です。</p>
+            </fieldset>
+          )}
+
           <fieldset>
             <legend>物件データのバックアップ</legend>
-            <p className="hint">物件データはこのブラウザ内（localStorage）だけに保存されています。ブラウザのデータ削除や端末変更に備えて、定期的にバックアップしてください。</p>
+            <p className="hint">
+              {account
+                ? '共有データはサーバーにも保存されていますが、念のため月1回程度JSONでバックアップしておくと安心です。'
+                : '物件データはこのブラウザ内（localStorage）だけに保存されています。ブラウザのデータ削除や端末変更に備えて、定期的にバックアップしてください。'}
+            </p>
             <button className="btn primary" onClick={exportJson} disabled={properties.length === 0}>
               ⬇ JSONでエクスポート（{properties.length}件）
             </button>

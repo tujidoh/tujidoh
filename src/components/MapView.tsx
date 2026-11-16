@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { MapContainer, TileLayer, GeoJSON, Marker, Circle, useMap, useMapEvents, ScaleControl } from 'react-leaflet'
 import L from 'leaflet'
 import type { Feature } from 'geojson'
@@ -97,6 +97,17 @@ export default function MapView(p: Props) {
   const [zoom, setZoom] = useState(INITIAL_ZOOM)
   const selected = p.properties.find((x) => x.id === p.selectedId)
   const renderer = useMemo(() => L.canvas({ padding: 0.5, tolerance: 6 }), [])
+  // 位置指定モード中は、バス路線・バス停をクリックしても位置指定として扱う（ポップアップは出さない）
+  const pickRef = useRef({ on: p.pickMode, fn: p.onPick })
+  pickRef.current = { on: p.pickMode, fn: p.onPick }
+  const pickable = (layer: L.Layer) => {
+    layer.on('click', (e: L.LeafletMouseEvent) => {
+      if (!pickRef.current.on) return
+      layer.closePopup()
+      L.DomEvent.stop(e)
+      pickRef.current.fn(e.latlng.lat, e.latlng.lng)
+    })
+  }
 
   const opKey = Object.entries(p.operatorVisible)
     .map(([k, v]) => `${k}${v ? 1 : 0}`)
@@ -145,6 +156,7 @@ export default function MapView(p: Props) {
                 ? `<b>${esc(operatorLabel(String(pr.operator ?? '')))}</b><br><small>${esc(l.source)}<br>※系統名はこのデータに含まれていません。周辺のバス停をクリックすると系統名を確認できます。</small>`
                 : `<b>${esc(featureTitle(pr) || l.name)}</b><br>${propTable(pr)}<small>${esc(l.name)}</small>`
               layer.bindPopup(html, { maxWidth: 280 })
+              pickable(layer)
               layer.bindTooltip(esc(l.builtin ? operatorLabel(String(pr.operator ?? '')) : featureTitle(pr) || l.name), { sticky: true })
             }}
           />
@@ -176,6 +188,7 @@ export default function MapView(p: Props) {
                   ? `<b>🚏 ${esc(name)}</b><br>事業者: ${esc(String(pr.operator ?? '').replace(/^伊丹市(?=$|、)/, '伊丹市営バス'))}<br>系統: ${esc(pr.lines)}<br><small>${esc(l.source)}</small>`
                   : `<b>🚏 ${esc(name)}</b><br>${propTable(pr)}<small>${esc(l.name)}</small>`
                 layer.bindPopup(html, { maxWidth: 300 })
+                pickable(layer)
                 layer.bindTooltip(esc(name), showStopLabels ? { permanent: true, direction: 'right', className: 'stop-label', offset: [6, 0] } : { direction: 'top' })
               }}
             />
@@ -197,7 +210,7 @@ export default function MapView(p: Props) {
               icon={pinIcon(STATUS_COLOR[x.status], sel, x.favorite, x.locationApprox)}
               zIndexOffset={sel ? 1000 : x.status === 'main' ? 500 : x.status === 'excluded' ? -500 : 0}
               title={`${x.name}（${STATUS_LABEL[x.status]}）${t != null ? ' ' + man(t) : ''}`}
-              eventHandlers={{ click: () => !p.pickMode && p.onSelect(x.id) }}
+              eventHandlers={{ click: (e) => (p.pickMode ? p.onPick(e.latlng.lat, e.latlng.lng) : p.onSelect(x.id)) }}
             />
           )
         })}

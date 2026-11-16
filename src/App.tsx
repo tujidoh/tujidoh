@@ -12,6 +12,8 @@ import { loadProperties, saveProperties } from './lib/storage'
 import { haversine, layoutGroup, rentPlusFee } from './lib/util'
 import type { BusLayer } from './lib/busData'
 import { loadBuiltinLayers, loadImportedLayers, operatorLabel, saveImportedLayers } from './lib/busData'
+import { useCloudSync, type Cloud } from './useCloudSync'
+import SyncBadge from './components/SyncBadge'
 
 const UI_KEY = 'itami-rental-map:ui:v1'
 function loadUi(): { filters: Filters; sort: SortKey } {
@@ -25,7 +27,7 @@ function loadUi(): { filters: Filters; sort: SortKey } {
 
 type Modal = { type: 'form'; editing: Property | null } | { type: 'compare' } | { type: 'data' } | null
 
-export default function App() {
+export default function App({ cloud }: { cloud: Cloud | null }) {
   const [properties, setProperties] = useState<Property[]>(() => loadProperties())
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [filters, setFilters] = useState<Filters>(() => loadUi().filters)
@@ -40,6 +42,7 @@ export default function App() {
   const [operatorVisible, setOperatorVisible] = useState<Record<string, boolean>>({})
   const [stopsVisible, setStopsVisible] = useState(true)
   const [pick, setPick] = useState<{ cb: (lat: number, lng: number) => void; pos: { lat: number; lng: number } | null } | null>(null)
+  const sync = useCloudSync(cloud, properties, setProperties)
   const firstSave = useRef(true)
   const detailRef = useRef<HTMLDivElement>(null)
 
@@ -189,10 +192,10 @@ export default function App() {
   const formModal = modal?.type === 'form' ? modal : null
 
   return (
-    <div className={'app' + (panelOpen ? ' panel-open' : '')}>
+    <div className={'app' + (panelOpen ? ' panel-open' : '') + (cloud ? ' cloud' : '')}>
       <header className="topbar">
         <h1>
-          <span className="logo">🏠</span> 伊丹 賃貸比較マップ
+          <span className="logo">🏠</span> <span className="title-text">伊丹 賃貸比較マップ</span>
         </h1>
         <div className="top-actions">
           <button className="btn primary" aria-label="物件を追加" onClick={() => setModal({ type: 'form', editing: null })}>
@@ -203,6 +206,7 @@ export default function App() {
             <span className="hide-sm">比較表</span>
             <span className="show-sm">比較</span>
           </button>
+          {cloud && <SyncBadge state={sync.state} realtime={sync.realtime} onClick={() => setModal({ type: 'data' })} />}
           <button className="btn" aria-label="データ管理" onClick={() => setModal({ type: 'data' })}>
             <span className="hide-sm">データ管理</span>
             <span className="show-sm">データ</span>
@@ -321,6 +325,33 @@ export default function App() {
           onAddLayer={(l) => updateLayers((ls) => [...ls, l])}
           onRemoveLayer={(id) => updateLayers((ls) => ls.filter((l) => l.id !== id))}
           onClose={() => setModal(null)}
+          account={
+            cloud
+              ? {
+                  email: cloud.user.email ?? '',
+                  state: sync.state,
+                  realtime: sync.realtime,
+                  onSyncNow: () => void sync.syncNow(),
+                  onLogout: async () => {
+                    const n = sync.pendingCount()
+                    if (
+                      !confirm(
+                        (n > 0 ? `⚠ まだ送信されていない変更が${n}件あります。今ログアウトすると失われます。\n\n` : '') +
+                          'ログアウトしますか？\n（このブラウザに保存された物件データは消去されます。共有データはサーバーに残ります）',
+                      )
+                    )
+                      return
+                    sync.clear()
+                    try {
+                      localStorage.removeItem('itami-rental-map:properties:v1')
+                    } catch {
+                      /* 無視 */
+                    }
+                    await cloud.client.auth.signOut()
+                  },
+                }
+              : null
+          }
         />
       )}
       {toast && <div className="toast">{toast}</div>}
